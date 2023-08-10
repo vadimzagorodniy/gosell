@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"sell/models"
 	"sell/util"
 	"strings"
@@ -27,16 +26,11 @@ type SdnList struct {
 var name models.Name
 var names []models.Name
 
-func isLocked() bool {
-	if _, err := os.Stat("lock"); err == nil {
-		return true
-	}
-	return false
-}
+var busy = false
 
 func Update(c *gin.Context) {
 	// locking process
-	if isLocked() {
+	if busy {
 		c.JSON(http.StatusOK, gin.H{
 			"error": "Process is already in progress",
 		})
@@ -49,11 +43,11 @@ func Update(c *gin.Context) {
 				"result": false,
 				"info":   "service unavailable",
 				"code":   503})
-			os.Remove("lock")
+			busy = false
 		}
 	}()
 
-	f, err := os.Create("lock")
+	busy = true
 
 	url := "https://www.treasury.gov/ofac/downloads/sdn.xml"
 
@@ -69,7 +63,7 @@ func Update(c *gin.Context) {
 		log.Fatal(err)
 		return
 	}
-	defer f.Close()
+
 	list := new(SdnList)
 	err = xml.Unmarshal([]byte(body), list)
 	if err != nil {
@@ -112,10 +106,7 @@ func Update(c *gin.Context) {
 		}
 	}
 
-	e := os.Remove("lock")
-	if e != nil {
-		log.Fatal(e)
-	}
+	busy = false
 
 	c.JSON(http.StatusOK, gin.H{
 		"code":   200,
@@ -127,7 +118,7 @@ func Update(c *gin.Context) {
 
 func State(c *gin.Context) {
 
-	if isLocked() {
+	if busy {
 		c.JSON(http.StatusOK, gin.H{
 			"info":   "updating",
 			"result": false,
@@ -191,4 +182,5 @@ func GetNames(c *gin.Context) {
 		return
 
 	}
+
 }
